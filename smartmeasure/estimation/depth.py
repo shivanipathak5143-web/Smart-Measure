@@ -10,7 +10,7 @@ MODELS = {
 
 class DepthEstimator:
     def __init__(self):
-        slef.cache={}
+        self.cache={}
 
     def _load(self, scene:str):
         if scene not in self._cache:
@@ -19,6 +19,7 @@ class DepthEstimator:
             model=AutoModelForDepthEstimation.from_pretrained(name).eval()
             self._cache[scene]=(proc, model)
         return sel._cache[scene]
+
 
     @torch.inference_mode()
     def predict(self, img_rgb:np.ndarray, scene:str)-> np.ndarray:
