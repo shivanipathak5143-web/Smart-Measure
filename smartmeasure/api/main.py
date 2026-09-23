@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,10 +8,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from smartmeasure.core.geometry import build_homography, distance_mm, marker_quality
 from smartmeasure.core.imageio import decode_image
 from smartmeasure.core.marker import detect_marker
+from smartmeasure.estimation import estimator
 
 MAX_BYTES = 10 * 1024 * 1024
 
-app = FastAPI(title="SmartMeasure API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    estimator.warmup()
+    yield
+
+
+app = FastAPI(title="SmartMeasure API", version="0.2.0", lifespan=lifespan)
 
 origins = [
     o.strip()
@@ -98,3 +107,20 @@ async def measure(
         "quality": q,
         "warnings": warnings,
     }
+
+
+@app.post("/api/estimate")
+def estimate_size(file: UploadFile = File(...), scene: str = Form("indoor")):
+    if scene not in ("indoor", "outdoor"):
+        raise HTTPException(422, "scene must be 'indoor' or 'outdoor'")
+
+    data = file.file.read()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "Image too large (max 10 MB)")
+
+    try:
+        img = decode_image(data)
+    except Exception:
+        raise HTTPException(400, "Could not read image")
+
+    return estimator.estimate(img, data, scene)
