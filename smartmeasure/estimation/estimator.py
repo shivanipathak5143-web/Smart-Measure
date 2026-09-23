@@ -35,6 +35,7 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
 
     depth = _depth.predict(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), scene)
     dets = segment(img)
+    dets = [d for d in dets if d["label"] in PRIORS]  # only measure classes we have priors for
     kernel = np.ones((5, 5), np.uint8)
 
     objects = []
