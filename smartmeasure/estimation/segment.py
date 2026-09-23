@@ -11,7 +11,6 @@ def _get():
         _model = YOLO("yolov8n-seg.pt")   # use yolov8s-seg.pt for better masks
     return _model
 
-
 def segment(img_bgr: np.ndarray, conf: float = 0.35):
     h, w = img_bgr.shape[:2]
     r = _get().predict(img_bgr, conf=conf, verbose=False)[0]
