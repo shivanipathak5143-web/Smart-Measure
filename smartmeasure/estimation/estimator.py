@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 
@@ -7,16 +9,17 @@ from .fusion import confidence, fuse
 from .priors import PRIORS
 from .segment import segment
 
-MAX_SIDE = 1024
-# Initial guesses for depth relative error. Calibrate these from scripts/evaluate.py.
+MAX_SIDE = 1024  # detection resolution; depth uses its own DEPTH_SIDE internally
 GEO_REL_SIGMA = {"indoor": 0.12, "outdoor": 0.18}
 
 _depth = DepthEstimator()
+_pool = ThreadPoolExecutor(max_workers=2)  # runs YOLO and depth concurrently
 
 
 def warmup():
-    _depth.predict(np.zeros((64, 64, 3), np.uint8), "indoor")
-    segment(np.zeros((64, 64, 3), np.uint8))
+    dummy = np.zeros((64, 64, 3), np.uint8)
+    _depth.predict(dummy, "indoor")
+    segment(dummy)
 
 
 def _extent_cm(vals: np.ndarray) -> float:
@@ -33,14 +36,19 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
     f, f_src = focal_px(raw_bytes, w, h)
     cx, cy = w / 2, h / 2
 
-    depth = _depth.predict(cv2.cvtColor(img, cv2.COLOR_BGR2RGB), scene)
-    dets = segment(img)
-    dets = [d for d in dets if d["label"] in PRIORS]  # only measure classes we have priors for
+    # YOLO and depth are independent of each other — run them in parallel
+    # instead of one after the other. This is the single biggest speed win.
+    depth_future = _pool.submit(_depth.predict, cv2.cvtColor(img, cv2.COLOR_BGR2RGB), scene)
+    dets_future = _pool.submit(segment, img)
+    depth = depth_future.result()
+    dets = dets_future.result()
+
+    dets = [d for d in dets if d["label"] in PRIORS]
     kernel = np.ones((5, 5), np.uint8)
 
     objects = []
     for d in dets:
-        mask = cv2.erode(d["mask"].astype(np.uint8), kernel).astype(bool)  # avoid edge depth bleed
+        mask = cv2.erode(d["mask"].astype(np.uint8), kernel).astype(bool)
         ys, xs = np.nonzero(mask)
         if len(xs) < 200:
             continue
@@ -50,7 +58,6 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
         if len(z) < 100:
             continue
 
-        # back-project pixels to 3D camera coordinates (metres)
         X = (xs - cx) * z / f
         Y = (ys - cy) * z / f
 
@@ -58,7 +65,7 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
         out = {
             "label": d["label"],
             "detector_conf": round(d["conf"], 2),
-            "bbox": [round(v / s) for v in d["bbox"]],   # back to original pixel coords
+            "bbox": [round(v / s) for v in d["bbox"]],
             "distance_m": round(float(np.median(z)), 2),
             "truncated": d["truncated"],
             "dims": {},
@@ -75,7 +82,7 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
             out["dims"][name] = {
                 "geometry_cm": round(geo, 1),
                 "estimate_cm": round(mean, 1),
-                "range_cm": [round(mean - 2 * sigma, 1), round(mean + 2 * sigma, 1)],  # ~95%
+                "range_cm": [round(mean - 2 * sigma, 1), round(mean + 2 * sigma, 1)],
                 "confidence": confidence(sigma, mean, d["truncated"], f_src == "exif"),
                 "used_prior": prior is not None,
             }
