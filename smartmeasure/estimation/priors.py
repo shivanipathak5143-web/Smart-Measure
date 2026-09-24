@@ -67,6 +67,7 @@ def get_prior(label: Optional[str], dim: str) -> Optional[Tuple[float, float]]:
     if not label:
         return None
     label = _norm(label)
+    
     if label in PRIORS and dim in PRIORS[label]:
         return PRIORS[label][dim]
     if label in _cache:
