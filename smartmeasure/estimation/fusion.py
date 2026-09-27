@@ -1,6 +1,4 @@
 import math
-
-
 def fuse(geo_cm: float, geo_rel_sigma: float, prior: tuple | None):
     """Inverse-variance weighted average of the geometry estimate and the prior.
     Returns (mean, sigma, notes)."""
