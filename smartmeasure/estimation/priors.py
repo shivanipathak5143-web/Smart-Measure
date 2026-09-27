@@ -1,10 +1,4 @@
-# (mean_cm, sd_cm) of typical size for upright objects, keyed by COCO label.
-# STARTING VALUES from general knowledge. Replace with statistics computed
-# from Objectron / ABO / your own data (see the datasets section).
-#
-# IMPORTANT: only labels listed here are ever measured (see estimator.py's
-# filter). Anything YOLO detects outside this list is dropped, since an
-# unanchored geometry-only estimate for an unfamiliar class is unreliable.
+
 PRIORS = {
     "person":       {"height": (165, 12)},
     "chair":        {"height": (90, 10)},
