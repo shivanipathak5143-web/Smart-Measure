@@ -16,5 +16,4 @@ def focal_px(data:bytes, width:int, height:int):
             f35, source=float(v), "exif"
     except Exception:
         pass
-    
     return f35*math.hypot(width,height)/ DIAG_35MM, source
