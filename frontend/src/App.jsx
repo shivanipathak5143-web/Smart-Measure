@@ -257,7 +257,10 @@ export default function App() {
             )}
             {result.data.objects.map((o, i) => (
               <div key={i} className="sm-result-card">
-                <h3>{i + 1}. {o.label} <span className="sm-dist">~{o.distance_m} m from camera</span></h3>
+                <h3>
+                 {i + 1}. {o.label}
+                  <span className="sm-dist">~{o.distance_m} m from camera · detector confidence {Math.round(o.detector_conf * 100)}%</span>
+                </h3>
                 {Object.entries(o.dims).map(([k, v]) => (
                   <div key={k} className="sm-dim-row">
                     <span className="sm-dim-name">{k}</span>

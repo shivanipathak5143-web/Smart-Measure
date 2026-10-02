@@ -3,7 +3,8 @@ import numpy as np
 from ultralytics import YOLO
 
 _model = None
-MIN_MASK_FRACTION = 0.01  # ignore masks smaller than 1% of the image area
+MIN_MASK_FRACTION = 0.01   # ignore masks smaller than 1% of the image area
+MAX_ASPECT_RATIO = 4.0     # reject boxes far too thin/tall to be a real object instance
 
 
 def _get():
@@ -13,26 +14,31 @@ def _get():
     return _model
 
 
-def segment(img_bgr: np.ndarray, conf: float = 0.25):
-    """conf lowered from 0.5 -> 0.25. Unusual framings (closed laptop lids,
-    objects filling the whole frame, odd angles) often get a correct but
-    lower-confidence prediction from YOLO. Measurement-grade filtering still
-    happens downstream via MIN_MASK_FRACTION and the PRIORS whitelist."""
+def segment(img_bgr: np.ndarray, conf: float = 0.35):
+    """conf=0.35 is a middle ground: 0.5 missed unusual framings (closed
+    laptop lids), 0.25 let through weak false positives on background
+    texture. Combined with the aspect-ratio filter below, this cuts most
+    spurious detections while still catching harder-but-real cases."""
     h, w = img_bgr.shape[:2]
     min_pixels = MIN_MASK_FRACTION * h * w
     r = _get().predict(img_bgr, conf=conf, verbose=False)[0]
     dets = []
     if r.masks is None:
         return dets
-    for box, poly in zip(r.boxes, r.masks.xy):  # polygons in original pixel coords
+    for box, poly in zip(r.boxes, r.masks.xy):
         if len(poly) < 3:
             continue
         mask = np.zeros((h, w), np.uint8)
         cv2.fillPoly(mask, [poly.astype(np.int32)], 1)
         if mask.sum() < min_pixels:
-            continue  # too small to trust
+            continue
+
         x1, y1, x2, y2 = box.xyxy[0].tolist()
-        m = 3  # px margin for "touches image border" check
+        bw, bh = max(x2 - x1, 1), max(y2 - y1, 1)
+        if max(bw / bh, bh / bw) > MAX_ASPECT_RATIO:
+            continue  # implausibly thin/tall sliver — likely background texture
+
+        m = 3
         dets.append({
             "label": r.names[int(box.cls)],
             "conf": float(box.conf),
@@ -44,10 +50,8 @@ def segment(img_bgr: np.ndarray, conf: float = 0.25):
 
 
 def raw_candidates(img_bgr: np.ndarray, conf: float = 0.05):
-    """Debug helper: shows every detection YOLO considered, even very weak
-    ones, with no mask/size filtering. Use this to diagnose a 'no objects
-    detected' result — it tells you whether YOLO saw something and rejected
-    it, or saw nothing at all."""
+    """Debug helper: every detection YOLO considered, unfiltered. Used only
+    to explain a 'no objects detected' result to the user."""
     r = _get().predict(img_bgr, conf=conf, verbose=False)[0]
     if r.boxes is None:
         return []
