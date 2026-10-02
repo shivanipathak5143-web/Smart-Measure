@@ -292,7 +292,6 @@ export default function App() {
           </section>
         )}
       </main>
-
       <footer className="sm-footer">
         Computer vision pipeline: YOLOv8-seg · Depth Anything V2 · ArUco + homography · built with FastAPI &amp; React
       </footer>
