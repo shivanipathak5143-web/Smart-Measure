@@ -7,7 +7,7 @@ from .camera import focal_px
 from .depth import DepthEstimator
 from .fusion import confidence, fuse
 from .priors import PRIORS
-from .segment import segment
+from .segment import raw_candidates, segment
 
 MAX_SIDE = 1024  # detection resolution; depth uses its own DEPTH_SIDE internally
 GEO_REL_SIGMA = {"indoor": 0.12, "outdoor": 0.18}
@@ -36,8 +36,6 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
     f, f_src = focal_px(raw_bytes, w, h)
     cx, cy = w / 2, h / 2
 
-    # YOLO and depth are independent of each other — run them in parallel
-    # instead of one after the other. This is the single biggest speed win.
     depth_future = _pool.submit(_depth.predict, cv2.cvtColor(img, cv2.COLOR_BGR2RGB), scene)
     dets_future = _pool.submit(segment, img)
     depth = depth_future.result()
@@ -72,7 +70,9 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
             "notes": [],
         }
         if d["truncated"]:
-            out["notes"].append("Object touches the image edge; size is likely underestimated. Retake with the whole object visible.")
+            out["notes"].append(
+                "Object touches the image edge; size is likely underestimated. Retake with the whole object visible."
+            )
 
         for name, geo in dims.items():
             prior = PRIORS.get(d["label"], {}).get(name)
@@ -91,8 +91,25 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
 
     warnings = []
     if f_src != "exif":
-        warnings.append("No camera focal length in EXIF (photo may be forwarded or a screenshot). Assumed a 26 mm phone lens; accuracy reduced.")
+        warnings.append(
+            "No camera focal length in EXIF (photo may be forwarded or a screenshot). "
+            "Assumed a 26 mm phone lens; accuracy reduced."
+        )
     if not objects:
-        warnings.append("No objects detected. Try a clearer photo with the whole object visible.")
+        # Tell the user WHY nothing was measured, instead of a flat dead end.
+        candidates = raw_candidates(img)
+        if candidates:
+            top = sorted(candidates, key=lambda c: -c["conf"])[:3]
+            names = ", ".join(f"{c['label']} ({c['conf']*100:.0f}%)" for c in top)
+            warnings.append(
+                f"No measurable objects detected. YOLO's best weak guesses were: {names}. "
+                "Try a clearer angle, more of the object in frame, or better lighting."
+            )
+        else:
+            warnings.append(
+                "No objects detected at all. Try a clearer photo with the whole object visible, "
+                "ideally from an angle that shows its recognizable shape (e.g. an open laptop, "
+                "not just the closed lid)."
+            )
 
     return {"scene": scene, "focal_source": f_src, "objects": objects, "warnings": warnings}
