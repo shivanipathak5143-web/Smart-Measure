@@ -2,6 +2,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,6 +32,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _fallback_quality(corners, marker_size_mm):
+    """Compute side_ratio and px_per_mm straight from the marker corners.
+
+    Used to fill in any key that marker_quality() does not return.
+    """
+    try:
+        pts = np.asarray(corners, dtype=float).reshape(-1, 2)
+        if len(pts) != 4:
+            return {}
+        sides = [float(np.linalg.norm(pts[i] - pts[(i + 1) % 4])) for i in range(4)]
+        shortest, longest = min(sides), max(sides)
+        return {
+            "side_ratio": longest / shortest if shortest > 0 else 999.0,
+            "px_per_mm": float(np.mean(sides)) / marker_size_mm,
+        }
+    except Exception:
+        return {}
+
+
+def _to_native(obj):
+    """Recursively convert numpy types to plain Python so FastAPI can send JSON."""
+    if isinstance(obj, dict):
+        return {str(k): _to_native(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_native(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return _to_native(obj.tolist())
+    if isinstance(obj, np.generic):
+        return obj.item()
+    return obj
 
 
 @app.get("/")
@@ -78,14 +111,21 @@ async def measure(
 
     marker_id, corners = found
     H = build_homography(corners, marker_size_mm)
+
     q = marker_quality(corners, marker_size_mm)
+    if not isinstance(q, dict):
+        q = {}
+    # Fill in any missing keys so the checks below never raise KeyError.
+    for key, value in _fallback_quality(corners, marker_size_mm).items():
+        q.setdefault(key, value)
+    print("QUALITY:", q)
 
     warnings = []
-    if q["side_ratio"] > 1.5:
+    if q.get("side_ratio", 1.0) > 1.5:
         warnings.append(
             "Marker is strongly tilted; accuracy may be reduced. Retake more front-on"
         )
-    if q["px_per_mm"] < 1.0:
+    if q.get("px_per_mm", 99.0) < 1.0:
         warnings.append(
             "Marker is small in the image; move closer for better accuracy."
         )
@@ -101,12 +141,14 @@ async def measure(
     except (KeyError, TypeError, ValueError, AttributeError):
         raise HTTPException(422, "Each segment needs p1 and p2 as [x, y]")
 
-    return {
-        "marker_id": marker_id,
-        "results": results,
-        "quality": q,
-        "warnings": warnings,
-    }
+    return _to_native(
+        {
+            "marker_id": marker_id,
+            "results": results,
+            "quality": q,
+            "warnings": warnings,
+        }
+    )
 
 
 @app.post("/api/estimate")
@@ -123,4 +165,4 @@ def estimate_size(file: UploadFile = File(...), scene: str = Form("indoor")):
     except Exception:
         raise HTTPException(400, "Could not read image")
 
-    return estimator.estimate(img, data, scene)
+    return _to_native(estimator.estimate(img, data, scene))
