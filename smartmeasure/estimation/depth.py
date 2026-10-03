@@ -48,7 +48,6 @@ class DepthEstimator:
             out.unsqueeze(1), size=(h, w), mode="bicubic", align_corners=False
         )[0, 0]
         return depth.clamp(min=0).cpu().numpy()
-
     @staticmethod
     def _fit(w, h, side):
         scale = side / max(w, h)
