@@ -166,3 +166,33 @@ def estimate_size(file: UploadFile = File(...), scene: str = Form("indoor")):
         raise HTTPException(400, "Could not read image")
 
     return _to_native(estimator.estimate(img, data, scene))
+
+@app.post("/api/estimate-region")
+async def estimate_region(
+    file: UploadFile = File(...),
+    scene: str = Form("indoor"),
+    bbox: str = Form(...),  # JSON "[x1, y1, x2, y2]" in ORIGINAL image pixel coords
+):
+    if scene not in ("indoor", "outdoor"):
+        raise HTTPException(422, "scene must be 'indoor' or 'outdoor'")
+
+    data = await file.read()
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "Image too large (max 10 MB)")
+
+    try:
+        img = decode_image(data)
+    except Exception:
+        raise HTTPException(400, "Could not read image")
+
+    try:
+        box = json.loads(bbox)
+        assert isinstance(box, list) and len(box) == 4
+        box = [float(v) for v in box]
+    except Exception:
+        raise HTTPException(422, "bbox must be JSON [x1, y1, x2, y2]")
+
+    result = estimator.estimate_region(img, data, box, scene)
+    if "error" in result:
+        raise HTTPException(422, result["error"])
+    return result
