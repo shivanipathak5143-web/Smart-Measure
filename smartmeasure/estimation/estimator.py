@@ -134,5 +134,4 @@ def estimate(img_bgr: np.ndarray, raw_bytes: bytes, scene: str = "indoor"):
             )
         else:
             warnings.append("No objects detected. Try a clearer photo with the whole object visible.")
-
     return {"scene": scene, "focal_source": f_src, "objects": objects, "warnings": _dedupe(warnings)}
