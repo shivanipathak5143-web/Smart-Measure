@@ -112,12 +112,6 @@ http://localhost:5173
 
 ---
 
-## 🧪 Testing
-
-```bash
-pytest
-```
-
 Tests cover the measurement geometry and estimation/fusion logic.
 
 ---
