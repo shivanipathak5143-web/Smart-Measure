@@ -112,8 +112,6 @@ http://localhost:5173
 
 ---
 
----
-
 ## ⚠️ Limitations
 
 * AI estimates are approximate and depend heavily on image quality.
