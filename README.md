@@ -112,8 +112,6 @@ http://localhost:5173
 
 ---
 
-Tests cover the measurement geometry and estimation/fusion logic.
-
 ---
 
 ## ⚠️ Limitations
